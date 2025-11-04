@@ -1,12 +1,12 @@
 from flask import Flask, render_template, request, jsonify
 import requests
-import os
 
 app = Flask(__name__)
 
-# Hugging Face Inference API (free tier)
+# Public, free model that never needs manual approval
 API_URL = "https://api-inference.huggingface.co/models/google/gemma-2b"
-HEADERS = {"Authorization": f"Bearer {os.getenv('HF_API_KEY', '')}"}
+
+HEADERS = {"Authorization": "Bearer hf_UNfhbOLoAVeawjWWlnTdkfwDPAyCAuxFAvhf_VkUsYtbufZHKLmxPvCPdOXwvbHipnUoWwM"}
 
 @app.route("/")
 def home():
@@ -20,21 +20,19 @@ def chat_api():
     try:
         response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=30)
         data = response.json()
-        print("DEBUG HF RESPONSE:", data)  # 👈 Add this line
+        print("DEBUG HF RESPONSE:", data)  # visible in Render logs
 
+        # Extract model reply if it exists
         if isinstance(data, list) and "generated_text" in data[0]:
             reply = data[0]["generated_text"]
+        elif "error" in data:
+            reply = f"Model error: {data['error']}"
         else:
             reply = "Hmm, I had trouble thinking. Please try again."
     except Exception as e:
-        print("DEBUG ERROR:", str(e))  # 👈 Add this line
         reply = f"Error: {str(e)}"
 
     return jsonify({"reply": reply})
 
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-
-
-
