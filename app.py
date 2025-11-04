@@ -19,6 +19,7 @@ def chat_api():
     payload = {"inputs": f"User: {user_input}\nVerona:"}
 
     try:
+        print("DEBUG TOKEN START:", HEADERS["Authorization"][:20])
         response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=30)
         data = response.json()
         print("DEBUG HF RESPONSE:", data)  # visible in Render logs
@@ -37,6 +38,7 @@ def chat_api():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
 
 
 
