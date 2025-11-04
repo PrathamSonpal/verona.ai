@@ -12,7 +12,7 @@ HEADERS = {"Authorization": f"Bearer {os.getenv('HF_API_KEY', '')}"}
 def home():
     return render_template("index.html")
 
-@@app.route("/chat", methods=["POST"])
+@app.route("/chat", methods=["POST"])
 def chat_api():
     user_input = request.json["message"]
     payload = {"inputs": f"User: {user_input}\nVerona:"}
@@ -35,5 +35,6 @@ def chat_api():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
 
 
