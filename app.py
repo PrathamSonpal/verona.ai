@@ -12,22 +12,28 @@ HEADERS = {"Authorization": f"Bearer {os.getenv('HF_API_KEY', '')}"}
 def home():
     return render_template("index.html")
 
-@app.route("/chat", methods=["POST"])
+@@app.route("/chat", methods=["POST"])
 def chat_api():
     user_input = request.json["message"]
-
     payload = {"inputs": f"User: {user_input}\nVerona:"}
+
     try:
         response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=30)
         data = response.json()
+        print("DEBUG HF RESPONSE:", data)  # 👈 Add this line
+
         if isinstance(data, list) and "generated_text" in data[0]:
             reply = data[0]["generated_text"]
         else:
             reply = "Hmm, I had trouble thinking. Please try again."
     except Exception as e:
+        print("DEBUG ERROR:", str(e))  # 👈 Add this line
         reply = f"Error: {str(e)}"
+
     return jsonify({"reply": reply})
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
 
