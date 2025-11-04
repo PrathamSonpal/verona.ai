@@ -1,16 +1,12 @@
 from flask import Flask, render_template, request, jsonify
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
+import requests
+import os
 
 app = Flask(__name__)
 
-# Load small, free model that runs on Render's CPU
-model_name = "microsoft/phi-2"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
-
-# Store last few messages (short-term memory)
-conversation_history = []
+# Hugging Face Inference API (free tier)
+API_URL = "https://api-inference.huggingface.co/models/microsoft/phi-2"
+HEADERS = {"Authorization": f"Bearer {os.getenv('HF_API_KEY', '')}"}
 
 @app.route("/")
 def home():
@@ -18,34 +14,18 @@ def home():
 
 @app.route("/chat", methods=["POST"])
 def chat_api():
-    global conversation_history
     user_input = request.json["message"]
 
-    # Add the new user message to memory
-    conversation_history.append(f"User: {user_input}")
-
-    # Keep memory short (last 5 turns)
-    if len(conversation_history) > 10:
-        conversation_history = conversation_history[-10:]
-
-    # Build Verona’s personality prompt
-    prompt = (
-        "You are Verona, a kind, friendly, and helpful AI assistant. "
-        "You speak naturally, explain things clearly, and sometimes show a bit of warmth. "
-        "Here’s the recent conversation:\n"
-        + "\n".join(conversation_history)
-        + "\nVerona:"
-    )
-
-    # Generate response
-    inputs = tokenizer(prompt, return_tensors="pt")
-    outputs = model.generate(**inputs, max_new_tokens=150)
-    reply = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-    # Extract only Verona's latest reply
-    reply = reply.split("Verona:")[-1].strip()
-    conversation_history.append(f"Verona: {reply}")
-
+    payload = {"inputs": f"User: {user_input}\nVerona:"}
+    try:
+        response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=30)
+        data = response.json()
+        if isinstance(data, list) and "generated_text" in data[0]:
+            reply = data[0]["generated_text"]
+        else:
+            reply = "Hmm, I had trouble thinking. Please try again."
+    except Exception as e:
+        reply = f"Error: {str(e)}"
     return jsonify({"reply": reply})
 
 if __name__ == "__main__":
