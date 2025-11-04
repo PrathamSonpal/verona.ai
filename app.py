@@ -6,7 +6,7 @@ app = Flask(__name__)
 # Public, free model that never needs manual approval
 API_URL = "https://router.huggingface.co/hf-inference/models/google/gemma-2b"
 
-HEADERS = {"Authorization": "Bearer hf_UNfhbOLoAVeawjWWlnTdkfwDPAyCAuxFAvhf_VkUsYtbufZHKLmxPvCPdOXwvbHipnUoWwM"}
+HEADERS = {"Authorization": f"Bearer {os.getenv('HF_API_KEY', '')}"}
 
 @app.route("/")
 def home():
@@ -36,4 +36,5 @@ def chat_api():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
 
