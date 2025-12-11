@@ -226,9 +226,37 @@ with col_main:
 
                 # call model
                 with st.spinner("Verona is thinking..."):
-                    try:
-                        if not HF_TOKEN:
-                            raise ValueError("HF_TOKEN not configured in environment.")
+    try:
+        if not HF_TOKEN:
+            raise ValueError("HF_TOKEN not configured in environment.")
 
-                        client = OpenAI(base_url="https://router.huggingface.co/v1", api_key=HF_TOKEN)
-                        response = client.chat.completions.create(
+        client = OpenAI(
+            base_url="https://router.huggingface.co/v1",
+            api_key=HF_TOKEN
+        )
+
+        response = client.chat.completions.create(
+            model=MODEL_ID,
+            messages=api_messages,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )  # <-- THIS closing parenthesis was missing before!
+
+        reply = response.choices[0].message.content
+
+        # remove hidden thinking tag if model emits one
+        if "</think>" in reply:
+            reply = reply.split("</think>")[-1].strip()
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": reply,
+            "ts": now_ts()
+        })
+
+        # Reset input safely
+        st.session_state.pop("prompt_input", None)
+        st.experimental_rerun()
+
+    except Exception as e:
+        st.error(f"Error calling model: {e}")
