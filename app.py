@@ -208,55 +208,95 @@ with col_main:
         # Handle reset: remove the widget-backed key safely and rerun
         if reset:
             st.session_state.pop("prompt_input", None)
-            # Clear the form field visually by rerunning the app
             st.experimental_rerun()
 
-        # Handle send: append user message, call API, add assistant response
+        # Handle send
         if send:
             if not prompt_text or not prompt_text.strip():
                 st.warning("Please type a message before sending.")
             else:
-                # append user message
-                st.session_state.messages.append({"role": "user", "content": prompt_text.strip(), "ts": now_ts()})
+                # Add user message
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": prompt_text.strip(),
+                    "ts": now_ts()
+                })
 
-                # build api messages (use st.session_state.messages as-is)
-                api_messages = []
-                for m in st.session_state.messages:
-                    api_messages.append({"role": m["role"], "content": m["content"]})
+                # Build messages for API
+                api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
 
-                # call model
+                # Call the model
                 with st.spinner("Verona is thinking..."):
-    try:
-        if not HF_TOKEN:
-            raise ValueError("HF_TOKEN not configured in environment.")
+                    try:
+                        if not HF_TOKEN:
+                            raise ValueError("HF_TOKEN not configured in environment.")
 
-        client = OpenAI(
-            base_url="https://router.huggingface.co/v1",
-            api_key=HF_TOKEN
-        )
+                        client = OpenAI(
+                            base_url="https://router.huggingface.co/v1",
+                            api_key=HF_TOKEN
+                        )
 
-        response = client.chat.completions.create(
-            model=MODEL_ID,
-            messages=api_messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )  # <-- THIS closing parenthesis was missing before!
+                        response = client.chat.completions.create(
+                            model=MODEL_ID,
+                            messages=api_messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens
+                        )
 
-        reply = response.choices[0].message.content
+                        reply = response.choices[0].message.content
 
-        # remove hidden thinking tag if model emits one
-        if "</think>" in reply:
-            reply = reply.split("</think>")[-1].strip()
+                        # Remove hidden <think> tag if present
+                        if "</think>" in reply:
+                            reply = reply.split("</think>")[-1].strip()
 
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": reply,
-            "ts": now_ts()
-        })
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": reply,
+                            "ts": now_ts()
+                        })
 
-        # Reset input safely
-        st.session_state.pop("prompt_input", None)
-        st.experimental_rerun()
+                        # Clear prompt safely and rerun so UI refreshes
+                        st.session_state.pop("prompt_input", None)
+                        st.experimental_rerun()
 
-    except Exception as e:
-        st.error(f"Error calling model: {e}")
+                    except Exception as e:
+                        st.error(f"Error calling model: {e}")
+
+with col_right:
+    st.subheader("Context & Files")
+    st.write("Upload small files (txt, md). Verona can use them as context snippets.")
+    uploaded = st.file_uploader("Upload files", accept_multiple_files=True, type=["txt", "md", "json"])
+    if uploaded:
+        for up in uploaded:
+            try:
+                raw = up.read()
+                try:
+                    text = raw.decode("utf-8")
+                except Exception:
+                    text = str(raw)[:300]
+                summary = text[:1000]
+                item = {"name": up.name, "summary": summary, "full": text}
+                if not any(f["name"] == up.name for f in st.session_state.uploaded_files):
+                    st.session_state.uploaded_files.append(item)
+            except Exception:
+                st.warning(f"Couldn't read {up.name}")
+
+    if st.session_state.uploaded_files:
+        for f in st.session_state.uploaded_files:
+            with st.expander(f["name"]):
+                st.code(f["summary"][:400] + ("..." if len(f["summary"]) > 400 else ""))
+                if st.button(f"Include {f['name']} in next prompt", key=f"include_{f['name']}"):
+                    # append short summary to system prompt so that the model sees it
+                    st.session_state.messages[0]["content"] += f"\n\nContext file ({f['name']}):\n{f['summary']}"
+                    st.success(f"Included {f['name']} as system context")
+
+    st.markdown("---")
+    st.subheader("Conversation tools")
+    if st.button("Export conversation (.json)"):
+        st.download_button("Download JSON", json.dumps(st.session_state.messages, indent=2), file_name="verona_convo.json")
+
+    if st.button("Copy system prompt to output"):
+        st.write(st.session_state.messages[0]["content"])
+
+st.markdown("---")
+st.markdown("**Tips**: Keep system prompts short. Use temperature for creativity. Use the file uploader to provide reference docs.")
