@@ -1,108 +1,71 @@
-import os
-import json
-import streamlit as st
-from openai import OpenAI
+# Add this at the top with your other imports
+from huggingface_hub import InferenceClient
 
-# ---------------------------------
-# PAGE CONFIG
-# ---------------------------------
-st.set_page_config(page_title="Verona AI", page_icon="🤖")
-st.title("🤖 Verona AI — Free & Smart")
-st.caption("Using Hugging Face SmolLM2 1.7B Instruct (free)")
-
-# ---------------------------------
-# TOKEN SETUP
-# ---------------------------------
+# ---------------------------
+# TOKEN SETUP (unchanged)
+# ---------------------------
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 if not HF_TOKEN:
     st.error("HF_TOKEN not set. Please configure it in Streamlit Secrets.")
     st.stop()
 
-client = OpenAI(
-    base_url="https://router.huggingface.co/v1",
-    api_key=HF_TOKEN,
-)
+# Supported free model (same)
+MODEL_ID = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
 
-# Supported free model
-MODEL_ID = "HuggingFaceTB/SmolLM2-1.7B-Instruct:hf-inference"
+# Create the HF Inference client
+client = InferenceClient(token=HF_TOKEN)
 
-# ---------------------------------
-# CLEAN RESPONSE
-# ---------------------------------
-def clean_response(text):
-    if "<think>" in text:
-        text = text.split("</think>")[-1].strip()
-    text = text.replace("<think>", "").replace("</think>", "")
-    return text
+# ---------------------------
+# In the place where you previously used client.chat.completions.create(...)
+# Replace that try/except block with this
+# ---------------------------
 
-# ---------------------------------
-# SAVE/LOAD CHAT HISTORY
-# ---------------------------------
-def save_history():
+try:
+    system_instruction = {
+        "role": "system",
+        "content": (
+            "You are Verona, a smart AI assistant. "
+            "Provide accurate and helpful answers. "
+            "Think before answering, but never reveal internal reasoning."
+        )
+    }
+
+    conversation = [system_instruction] + st.session_state.messages[-8:]
+
+    # Hugging Face InferenceClient supports chat completion directly:
+    # it expects a list of messages (role/content dicts).
+    # Use chat_completion, passing model and messages
+    hf_resp = client.chat_completion(
+        model=MODEL_ID,
+        messages=conversation,
+        # optional: max_new_tokens=256, temperature=0.7, stream=False
+    )
+
+    # The HF response shape can vary by version/provider. Try common fields:
+    reply = None
+
+    # if it follows choice/message style (OpenAI-like)
     try:
-        with open("history.json", "w") as f:
-            json.dump(st.session_state.messages, f)
-    except:
+        if isinstance(hf_resp, dict) and "choices" in hf_resp:
+            reply = hf_resp["choices"][0]["message"]["content"]
+    except Exception:
         pass
 
-def load_history():
-    try:
-        with open("history.json", "r") as f:
-            st.session_state.messages = json.load(f)
-    except:
-        st.session_state.messages = []
+    # fallback: some HF clients return 'generated_text' or 'content'
+    if not reply:
+        # Inspect returned object safely (convert to string)
+        # Many versions return a simple object with text under `.choices` or `generated_text`
+        if isinstance(hf_resp, dict) and "generated_text" in hf_resp:
+            reply = hf_resp["generated_text"]
+        elif isinstance(hf_resp, dict) and "message" in hf_resp and "content" in hf_resp["message"]:
+            reply = hf_resp["message"]["content"]
+        else:
+            # last fallback: stringify the response (useful for debugging)
+            reply = str(hf_resp)
 
-# ---------------------------------
-# INITIALIZE SESSION
-# ---------------------------------
-if "messages" not in st.session_state:
-    load_history()
+    # clean up any <think> tags like you already had
+    reply = clean_response(reply)
 
-# ---------------------------------
-# DISPLAY CHAT HISTORY
-# ---------------------------------
-for msg in st.session_state.messages:
-    avatar = "🤖" if msg["role"] == "assistant" else "🙂"
-    with st.chat_message(msg["role"], avatar=avatar):
-        st.markdown(msg["content"])
-
-# ---------------------------------
-# USER INPUT
-# ---------------------------------
-if prompt := st.chat_input("Ask Verona anything..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    save_history()
-
-    with st.chat_message("user", avatar="🙂"):
-        st.markdown(prompt)
-
-    with st.chat_message("assistant", avatar="🤖"):
-        with st.spinner("Verona is thinking..."):
-            try:
-                system_instruction = {
-                    "role": "system",
-                    "content": (
-                        "You are Verona, a smart AI assistant. "
-                        "Provide accurate and helpful answers. "
-                        "Think before answering, but never reveal internal reasoning."
-                    )
-                }
-
-                conversation = [system_instruction] + st.session_state.messages[-8:]
-
-                completion = client.chat.completions.create(
-                    model=MODEL_ID,
-                    messages=conversation,
-                )
-
-                reply = completion.choices[0].message.content
-                reply = clean_response(reply)
-
-            except Exception as e:
-                reply = f"❌ Error: {str(e)}"
-
-        st.markdown(reply)
-
-    st.session_state.messages.append({"role": "assistant", "content": reply})
-    save_history()
+except Exception as e:
+    reply = f"❌ Error: {str(e)}"
