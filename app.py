@@ -9,25 +9,24 @@ import time
 st.set_page_config(
     page_title="Verona AI",
     page_icon="✨",
-    layout="centered",
-    initial_sidebar_state="auto"
+    layout="centered"
 )
 
-# Custom CSS to mimic a cleaner, "Gemini-like" UI
+# Custom CSS for a minimalistic, "Gemini-like" UI
 st.markdown("""
 <style>
-    /* Hide the Streamlit main menu and footer for a cleaner look */
+    /* Hide the Streamlit main menu, footer, and header */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
-    /* Tighten up the top padding */
+    /* Adjust padding to center content nicely */
     .block-container {
-        padding-top: 2rem;
+        padding-top: 3rem;
         padding-bottom: 5rem;
     }
 
-    /* Custom Title Style */
+    /* Gradient Title */
     .title-text {
         font-family: 'Inter', sans-serif;
         background: -webkit-linear-gradient(45deg, #4A90E2, #9013FE);
@@ -43,34 +42,25 @@ st.markdown("""
         text-align: center;
         color: #666;
         font-size: 1.1rem;
-        margin-bottom: 2rem;
+        margin-bottom: 3rem;
+    }
+    
+    /* Input field styling adjustments (Streamlit default is okay, but we clean around it) */
+    .stChatInput {
+        padding-bottom: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. SETUP CLIENT & SIDEBAR
+# 2. SETUP CLIENT
 # -----------------------------------------------------------------------------
 
-# Sidebar for controls
-with st.sidebar:
-    st.title("⚙️ Controls")
-    
-    # Model Configuration
-    temperature = st.slider("Creativity (Temperature)", 0.0, 1.0, 0.7)
-    max_tokens = st.slider("Max Length", 256, 4096, 2048)
-    
-    st.divider()
-    
-    # Clear Chat Button
-    if st.button("🗑️ Clear Conversation", use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
+# Internal Settings (Hidden from user)
+TEMPERATURE = 0.7
+MAX_TOKENS = 2048
+MODEL_ID = "HuggingFaceTB/SmolLM3-3B:hf-inference"
 
-    st.markdown("---")
-    st.caption("Powered by HuggingFace Inference & SmolLM3")
-
-# Initialize Client
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 if not HF_TOKEN:
@@ -82,8 +72,6 @@ client = OpenAI(
     api_key=HF_TOKEN,
 )
 
-MODEL_ID = "HuggingFaceTB/SmolLM3-3B:hf-inference"
-
 # -----------------------------------------------------------------------------
 # 3. SESSION STATE & CHAT HISTORY
 # -----------------------------------------------------------------------------
@@ -94,24 +82,23 @@ if "messages" not in st.session_state:
 # Title Area
 st.markdown('<div class="title-text">Verona AI</div>', unsafe_allow_html=True)
 
-# If chat is empty, show a welcoming "Hero" section
+# Hero Section: Only shows when chat is empty
 if not st.session_state.messages:
-    st.markdown('<div class="subtitle-text">Hello! I\'m Verona. How can I help you today?</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle-text">Hello. How can I help you today?</div>', unsafe_allow_html=True)
     
-    # Optional: Quick start suggestions
+    # Simple starter suggestions
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("📝 Write a poem about code", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": "Write a short poem about coding."})
+        if st.button("📝 Draft an email", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "Draft a professional email to a client about a project update."})
             st.rerun()
     with col2:
-        if st.button("🐍 Explain Python lists", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": "Explain Python lists in simple terms."})
+        if st.button("🧠 Brainstorm ideas", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "Brainstorm 5 creative names for a new coffee shop."})
             st.rerun()
 
 # Display Chat History
 for msg in st.session_state.messages:
-    # Use different avatars for distinct visual separation
     avatar = "👤" if msg["role"] == "user" else "✨"
     with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
@@ -132,13 +119,12 @@ if prompt := st.chat_input("Message Verona..."):
         full_response = ""
         
         try:
-            # Create a streaming request
             stream = client.chat.completions.create(
                 model=MODEL_ID,
                 messages=st.session_state.messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,  # ENABLE STREAMING
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS,
+                stream=True,
             )
             
             # Process the stream
@@ -147,20 +133,18 @@ if prompt := st.chat_input("Message Verona..."):
                     content = chunk.choices[0].delta.content
                     full_response += content
                     
-                    # Clean <think> tags dynamically for display
-                    # (Simple logic: if we see the end tag, split. 
-                    # Complex logic is hard in real-time streaming, so we display raw 
-                    # during stream, and clean it up after)
+                    # Logic to hide <think> blocks while streaming
                     display_text = full_response
                     if "</think>" in display_text:
+                        # Only show what comes AFTER the thinking block
                         display_text = display_text.split("</think>")[-1].strip()
                     elif "<think>" in display_text:
-                        # If we are currently "thinking", show a loading indicator
-                        display_text = "Let me think about that..."
+                        # While thinking, show a subtle loading state
+                        display_text = "Thinking..."
                         
                     message_placeholder.markdown(display_text + "▌")
             
-            # Final cleanup of <think> tags
+            # Final cleanup
             if "<think>" in full_response:
                 final_clean_reply = full_response.split("</think>")[-1].strip()
             else:
