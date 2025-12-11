@@ -1,26 +1,18 @@
-# Add this at the top with your other imports
-from huggingface_hub import InferenceClient
+# Add near top with other imports
+import requests
 
-# ---------------------------
 # TOKEN SETUP (unchanged)
-# ---------------------------
 HF_TOKEN = os.getenv("HF_TOKEN")
-
 if not HF_TOKEN:
     st.error("HF_TOKEN not set. Please configure it in Streamlit Secrets.")
     st.stop()
 
-# Supported free model (same)
-MODEL_ID = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+MODEL_ID = "HuggingFaceTB/SmolLM2-1.7B-Instruct"  # same model id
 
-# Create the HF Inference client
-client = InferenceClient(token=HF_TOKEN)
+HF_ROUTER = f"https://router.huggingface.co/hf-inference/models/{MODEL_ID}/v1/chat/completions"
+HEADERS = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
 
-# ---------------------------
-# In the place where you previously used client.chat.completions.create(...)
-# Replace that try/except block with this
-# ---------------------------
-
+# Replace the portion in your try/except where you call the client with this:
 try:
     system_instruction = {
         "role": "system",
@@ -33,38 +25,48 @@ try:
 
     conversation = [system_instruction] + st.session_state.messages[-8:]
 
-    # Hugging Face InferenceClient supports chat completion directly:
-    # it expects a list of messages (role/content dicts).
-    # Use chat_completion, passing model and messages
-    hf_resp = client.chat_completion(
-        model=MODEL_ID,
-        messages=conversation,
-        # optional: max_new_tokens=256, temperature=0.7, stream=False
-    )
+    payload = {
+        "model": MODEL_ID,
+        "messages": conversation,
+        # optional tuning params:
+        # "max_new_tokens": 256,
+        # "temperature": 0.7,
+        # "top_p": 0.95,
+        # "stream": False
+    }
 
-    # The HF response shape can vary by version/provider. Try common fields:
+    resp = requests.post(HF_ROUTER, headers=HEADERS, json=payload, timeout=60)
+    if resp.status_code != 200:
+        raise Exception(f"HF API error {resp.status_code}: {resp.text}")
+
+    data = resp.json()
+
+    # Parse common response shapes:
     reply = None
 
-    # if it follows choice/message style (OpenAI-like)
-    try:
-        if isinstance(hf_resp, dict) and "choices" in hf_resp:
-            reply = hf_resp["choices"][0]["message"]["content"]
-    except Exception:
-        pass
-
-    # fallback: some HF clients return 'generated_text' or 'content'
+    if isinstance(data, dict):
+        # OpenAI-like chat completion format
+        if "choices" in data and isinstance(data["choices"], list) and data["choices"]:
+            # many HF router responses mimic OpenAI shape:
+            choice = data["choices"][0]
+            # try different places where content may be
+            if isinstance(choice, dict):
+                if "message" in choice and isinstance(choice["message"], dict):
+                    reply = choice["message"].get("content")
+                elif "text" in choice:
+                    reply = choice.get("text")
+                elif "delta" in choice and isinstance(choice["delta"], dict):
+                    # if streaming-like single chunk
+                    reply = choice["delta"].get("content") or choice["delta"].get("text")
+        # fallbacks
+        if not reply and "generated_text" in data:
+            reply = data["generated_text"]
+        if not reply and "message" in data and isinstance(data["message"], dict):
+            reply = data["message"].get("content")
     if not reply:
-        # Inspect returned object safely (convert to string)
-        # Many versions return a simple object with text under `.choices` or `generated_text`
-        if isinstance(hf_resp, dict) and "generated_text" in hf_resp:
-            reply = hf_resp["generated_text"]
-        elif isinstance(hf_resp, dict) and "message" in hf_resp and "content" in hf_resp["message"]:
-            reply = hf_resp["message"]["content"]
-        else:
-            # last fallback: stringify the response (useful for debugging)
-            reply = str(hf_resp)
+        # last resort: stringify
+        reply = str(data)
 
-    # clean up any <think> tags like you already had
     reply = clean_response(reply)
 
 except Exception as e:
