@@ -1,4 +1,4 @@
-# app.py — Verona AI (polished UI, stable session_state handling)
+# app.py — Verona AI (polished UI, streaming support)
 import os
 import json
 from datetime import datetime
@@ -98,13 +98,29 @@ with st.sidebar:
     st.write("A compact, polished assistant UI. Use the controls below to manage the model and conversation.")
 
     st.markdown("---")
-    HF_TOKEN = os.getenv("HF_TOKEN")
+    # Check for secrets first, then os.getenv
+    HF_TOKEN = st.secrets.get("HF_TOKEN") or os.getenv("HF_TOKEN")
+    
     if not HF_TOKEN:
         st.error("HF_TOKEN not set. Add it to Streamlit Cloud secrets or env vars.")
 
     st.subheader("Model")
-    MODEL_ID = st.text_input("Model ID (router)", value="HuggingFaceTB/SmolLM3-3B:hf-inference")
-    temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
+    # Improved Model Selection
+    model_options = [
+        "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+        "meta-llama/Llama-3.2-3B-Instruct",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.3",
+        "Custom..."
+    ]
+    selected_model = st.selectbox("Select Model", model_options)
+
+    if selected_model == "Custom...":
+        MODEL_ID = st.text_input("Enter Custom Model ID", value="HuggingFaceTB/SmolLM2-1.7B-Instruct")
+    else:
+        MODEL_ID = selected_model
+
+    temperature = st.slider("Temperature", 0.0, 1.0, 0.4, 0.05)
     max_tokens = st.slider("Max tokens", 64, 2048, 512, 64)
 
     st.markdown("---")
@@ -114,6 +130,7 @@ with st.sidebar:
         orig_system = st.session_state.messages[0]["content"] if st.session_state.messages else "You are Verona, a friendly, concise assistant."
         st.session_state.messages = [{"role": "system", "content": orig_system, "ts": now_ts()}]
         st.success("Conversation cleared")
+        st.rerun()
 
     if st.session_state.messages:
         st.download_button("Download conversation (.json)", json.dumps(st.session_state.messages, indent=2), file_name="verona_conversation.json")
@@ -126,6 +143,7 @@ with st.sidebar:
             if isinstance(parsed, list):
                 st.session_state.messages = parsed
                 st.success("Conversation imported")
+                st.rerun()
             else:
                 st.error("Conversation file must be a JSON list of messages.")
         except Exception:
@@ -134,12 +152,15 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Quick prompts")
     ex1, ex2, ex3 = st.columns(3)
-    if ex1.button("Summarize repo"):
+    if ex1.button("Summarize"):
         st.session_state.messages.append({"role": "user", "content": "Summarize this repo in two sentences.", "ts": now_ts()})
-    if ex2.button("Email subject ideas"):
+        st.rerun()
+    if ex2.button("Ideas"):
         st.session_state.messages.append({"role": "user", "content": "Generate 5 subject lines for an email about product launch.", "ts": now_ts()})
-    if ex3.button("Explain TCP vs UDP"):
+        st.rerun()
+    if ex3.button("Explain"):
         st.session_state.messages.append({"role": "user", "content": "Explain the difference between TCP and UDP for a beginner.", "ts": now_ts()})
+        st.rerun()
 
     st.markdown("---")
     st.subheader("System prompt")
@@ -152,7 +173,7 @@ with st.sidebar:
     st.write("Theme")
     if st.button("Toggle dark/light"):
         st.session_state.theme = "dark" if st.session_state.theme == "light" else "light"
-        st.experimental_rerun()
+        st.rerun()
 
     st.markdown("---")
     st.caption("Verona AI — Polished UI. Built for clarity and speed.")
@@ -201,14 +222,14 @@ with col_main:
         prompt_text = st.text_area("Ask Verona anything...", height=120, key="prompt_input")
         send_col, reset_col = st.columns([1, 1])
         with send_col:
-            send = st.form_submit_button("Send")
+            send = st.form_submit_button("Send", use_container_width=True)
         with reset_col:
-            reset = st.form_submit_button("Reset input (clear)")
+            reset = st.form_submit_button("Reset input", use_container_width=True)
 
-        # Handle reset: remove the widget-backed key safely and rerun
+        # Handle reset
         if reset:
             st.session_state.pop("prompt_input", None)
-            st.experimental_rerun()
+            st.rerun()
 
         # Handle send
         if send:
@@ -222,42 +243,72 @@ with col_main:
                     "ts": now_ts()
                 })
 
+                # Force a UI update immediately so user sees their message
+                # We can't use st.rerun() inside a form callback easily without complex logic,
+                # but since we are about to stream the response, the UI will update in the spinner block.
+                
                 # Build messages for API
                 api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
 
-                # Call the model
+                # Call the model with STREAMING
                 with st.spinner("Verona is thinking..."):
                     try:
                         if not HF_TOKEN:
-                            raise ValueError("HF_TOKEN not configured in environment.")
+                            raise ValueError("HF_TOKEN not configured.")
 
                         client = OpenAI(
                             base_url="https://router.huggingface.co/v1",
                             api_key=HF_TOKEN
                         )
 
-                        response = client.chat.completions.create(
+                        stream = client.chat.completions.create(
                             model=MODEL_ID,
                             messages=api_messages,
                             temperature=temperature,
-                            max_tokens=max_tokens
+                            max_tokens=max_tokens,
+                            stream=True  # Enable streaming
                         )
 
-                        reply = response.choices[0].message.content
+                        # Create a placeholder for the incoming stream
+                        # This placeholder allows us to print the bubble *outside* the form loop visually
+                        # Note: In Streamlit forms, output usually stays in the form until rerun. 
+                        # We will render it here, then append to history.
+                        response_placeholder = st.empty()
+                        full_response = ""
 
-                        # Remove hidden <think> tag if present
-                        if "</think>" in reply:
-                            reply = reply.split("</think>")[-1].strip()
+                        # Loop through chunks
+                        for chunk in stream:
+                            content_chunk = chunk.choices[0].delta.content
+                            if content_chunk:
+                                full_response += content_chunk
+                                
+                                # Render the custom HTML bubble in real-time
+                                response_placeholder.markdown(
+                                    f"<div class='msg-row'><div class='meta'><span class='role-badge'>Verona</span><span class='small-muted'>{now_ts()}</span></div><div class='msg-with-avatar'><div class='avatar'>🟣</div><div class='bubble assistant'>{full_response}▌</div></div></div>", 
+                                    unsafe_allow_html=True
+                                )
 
+                        # Clean up response (remove hidden think tags if using reasoning models)
+                        if "</think>" in full_response:
+                             full_response = full_response.split("</think>")[-1].strip()
+
+                        # Final render without the cursor
+                        response_placeholder.markdown(
+                            f"<div class='msg-row'><div class='meta'><span class='role-badge'>Verona</span><span class='small-muted'>{now_ts()}</span></div><div class='msg-with-avatar'><div class='avatar'>🟣</div><div class='bubble assistant'>{full_response}</div></div></div>", 
+                            unsafe_allow_html=True
+                        )
+
+                        # Append to session state
                         st.session_state.messages.append({
                             "role": "assistant",
-                            "content": reply,
+                            "content": full_response,
                             "ts": now_ts()
                         })
 
-                        # Clear prompt safely and rerun so UI refreshes
+                        # Clear input safely
                         st.session_state.pop("prompt_input", None)
-                        st.experimental_rerun()
+                        # Rerun to finalize the chat history view
+                        st.rerun()
 
                     except Exception as e:
                         st.error(f"Error calling model: {e}")
@@ -285,10 +336,16 @@ with col_right:
         for f in st.session_state.uploaded_files:
             with st.expander(f["name"]):
                 st.code(f["summary"][:400] + ("..." if len(f["summary"]) > 400 else ""))
-                if st.button(f"Include {f['name']} in next prompt", key=f"include_{f['name']}"):
-                    # append short summary to system prompt so that the model sees it
-                    st.session_state.messages[0]["content"] += f"\n\nContext file ({f['name']}):\n{f['summary']}"
-                    st.success(f"Included {f['name']} as system context")
+                
+                # Check duplication before adding
+                context_already_added = f"Context file ({f['name']})" in st.session_state.messages[0]["content"]
+                
+                if st.button(f"Include {f['name']}", key=f"include_{f['name']}", disabled=context_already_added):
+                    if not context_already_added:
+                        # append short summary to system prompt so that the model sees it
+                        st.session_state.messages[0]["content"] += f"\n\nContext file ({f['name']}):\n{f['summary']}"
+                        st.success(f"Included {f['name']} in system context")
+                        st.rerun()
 
     st.markdown("---")
     st.subheader("Conversation tools")
@@ -296,7 +353,7 @@ with col_right:
         st.download_button("Download JSON", json.dumps(st.session_state.messages, indent=2), file_name="verona_convo.json")
 
     if st.button("Copy system prompt to output"):
-        st.write(st.session_state.messages[0]["content"])
+        st.code(st.session_state.messages[0]["content"])
 
 st.markdown("---")
 st.markdown("**Tips**: Keep system prompts short. Use temperature for creativity. Use the file uploader to provide reference docs.")
