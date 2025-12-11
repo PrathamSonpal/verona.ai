@@ -3,20 +3,20 @@ import json
 import streamlit as st
 from openai import OpenAI
 
-# -----------------------------
+# ---------------------------------
 # PAGE CONFIG
-# -----------------------------
+# ---------------------------------
 st.set_page_config(page_title="Verona AI", page_icon="🤖")
-st.title("🤖 Verona AI — Fast, Smart, and Friendly")
-st.caption("Powered by Hugging Face Inference & Llama 3.2")
+st.title("🤖 Verona AI — Smarter, Cleaner, Faster")
+st.caption("Powered by Hugging Face Inference — SmolLM3 1.7B Instruct")
 
-# -----------------------------
+# ---------------------------------
 # TOKEN SETUP
-# -----------------------------
+# ---------------------------------
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 if not HF_TOKEN:
-    st.error("HF_TOKEN not set. Please configure it in Streamlit Secrets.")
+    st.error("HF_TOKEN not set in Streamlit Secrets.")
     st.stop()
 
 client = OpenAI(
@@ -24,11 +24,24 @@ client = OpenAI(
     api_key=HF_TOKEN,
 )
 
-MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct:hf-inference"
+# BEST FREE SMART MODEL
+MODEL_ID = "HuggingFaceTB/SmolLM3-1.7B-Instruct:hf-inference"
 
-# -----------------------------
+
+# ---------------------------------
+# CLEAN THINK BLOCKS
+# ---------------------------------
+def clean_response(text):
+    """Remove hidden <think> reasoning to keep answers clean."""
+    if "<think>" in text:
+        text = text.split("</think>")[-1].strip()
+    text = text.replace("<think>", "").replace("</think>", "")
+    return text
+
+
+# ---------------------------------
 # CHAT HISTORY SAVE/LOAD
-# -----------------------------
+# ---------------------------------
 def save_history():
     try:
         with open("history.json", "w") as f:
@@ -43,48 +56,56 @@ def load_history():
     except:
         st.session_state.messages = []
 
-# -----------------------------
+
+# ---------------------------------
 # INITIALIZE SESSION
-# -----------------------------
+# ---------------------------------
 if "messages" not in st.session_state:
     load_history()
 
-# -----------------------------
+
+# ---------------------------------
 # DISPLAY CHAT HISTORY
-# -----------------------------
+# ---------------------------------
 for msg in st.session_state.messages:
     avatar = "🤖" if msg["role"] == "assistant" else "🙂"
     with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
 
-# -----------------------------
+
+# ---------------------------------
 # USER INPUT
-# -----------------------------
+# ---------------------------------
 if prompt := st.chat_input("Ask Verona anything..."):
 
-    # Add user message
+    # Store user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     save_history()
 
     with st.chat_message("user", avatar="🙂"):
         st.markdown(prompt)
 
-    # -----------------------------
+    # ---------------------------------
     # AI RESPONSE
-    # -----------------------------
+    # ---------------------------------
     with st.chat_message("assistant", avatar="🤖"):
         with st.spinner("Verona is thinking..."):
+
             try:
+                # SMARTER SYSTEM PROMPT
                 system_instruction = {
                     "role": "system",
                     "content": (
-                        "You are Verona, a friendly, highly accurate AI assistant. "
-                        "Give helpful, concise answers. If users ask for detailed explanations, provide them calmly."
+                        "You are Verona, a highly intelligent AI assistant. "
+                        "Think deeply before answering. Provide accurate, structured, and thoughtful explanations. "
+                        "Be friendly but professional. "
+                        "NEVER reveal chain-of-thought, internal reasoning, or <think> blocks. "
+                        "If a user asks for reasoning, give a short explanation instead of detailed chain-of-thought."
                     )
                 }
 
-                # Only send last 6 messages for speed
-                conversation = [system_instruction] + st.session_state.messages[-6:]
+                # Use last 8 messages to improve reasoning
+                conversation = [system_instruction] + st.session_state.messages[-8:]
 
                 completion = client.chat.completions.create(
                     model=MODEL_ID,
@@ -92,16 +113,13 @@ if prompt := st.chat_input("Ask Verona anything..."):
                 )
 
                 reply = completion.choices[0].message.content
-
-                # Remove <think> blocks if any
-                if "<think>" in reply:
-                    reply = reply.split("</think>")[-1].strip()
+                reply = clean_response(reply)
 
             except Exception as e:
                 reply = f"❌ Error: {str(e)}"
 
         st.markdown(reply)
 
-    # Add assistant message to history
+    # Save assistant response
     st.session_state.messages.append({"role": "assistant", "content": reply})
     save_history()
