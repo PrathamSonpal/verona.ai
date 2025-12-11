@@ -1,5 +1,6 @@
 # Add near top with other imports
 import requests
+import os
 
 # TOKEN SETUP (unchanged)
 HF_TOKEN = os.getenv("HF_TOKEN")
