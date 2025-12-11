@@ -5,197 +5,278 @@ from datetime import datetime
 import streamlit as st
 from openai import OpenAI
 
-# -----------------------------
-# Verona AI (improved UI)
-# -----------------------------
-# Key improvements (see README below):
-# - Sidebar controls for token, model params (temperature, max tokens)
-# - Clear chat, save/load conversation, download as JSON
-# - Example prompts as quick-buttons
-# - File uploader to send context to the assistant
-# - Nicely formatted chat bubbles with timestamps and role badges
-# - Safe HF_TOKEN check and graceful error handling
-# - Lightweight CSS for improved visuals
-
 st.set_page_config(page_title="Verona AI", page_icon="🤖", layout="wide")
 
 # -----------------------------
-# Helper utilities
+# Utilities
 # -----------------------------
 
 def now_ts():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+
 def init_state():
     if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "system_prompt" not in st.session_state:
-        st.session_state.system_prompt = "You are Verona, a helpful assistant." 
+        # seed with friendly system message
+        st.session_state.messages = [
+            {"role": "system", "content": "You are Verona, a friendly, concise assistant.", "ts": now_ts()},
+        ]
+    if "pinned" not in st.session_state:
+        st.session_state.pinned = []
+    if "theme" not in st.session_state:
+        st.session_state.theme = "light"
     if "uploaded_files" not in st.session_state:
         st.session_state.uploaded_files = []
+
 
 init_state()
 
 # -----------------------------
-# Layout & CSS
+# Styling (light + dark)
 # -----------------------------
-CSS = '''
+LIGHT_CSS = """
 <style>
-.chat-bubble {
-  padding: 12px 14px;
-  border-radius: 12px;
-  margin-bottom: 8px;
-  max-width: 80%;
-  line-height: 1.4;
+:root{
+  --bg: #ffffff; --panel:#f7f7fb; --muted:#6b7280; --accent:#6c5ce7; --user:#DCF8C6; --assistant:#f1f0f0;
 }
-.user-bubble { background-color: #DCF8C6; align-self: flex-end; }
-.assistant-bubble { background-color: #F1F0F0; align-self: flex-start; }
-.role-badge { font-size: 12px; opacity: 0.8; }
-.timestamp { font-size: 11px; color: #666; margin-left: 8px; }
-.chat-row { display: flex; flex-direction: column; }
-.chat-controls { margin-bottom: 12px; }
+body{background:var(--bg)!important}
+.header{display:flex;align-items:center;gap:12px}
+.logo{font-size:28px}
+.tagline{color:var(--muted);font-size:14px}
+.chat-panel{display:flex;flex-direction:column;gap:8px;padding:12px}
+.bubble{padding:12px 14px;border-radius:14px;max-width:78%;line-height:1.45}
+.user{align-self:flex-end;background:var(--user)}
+.assistant{align-self:flex-start;background:var(--assistant)}
+.meta{font-size:12px;color:var(--muted);margin-bottom:6px}
+.role-badge{font-weight:600;margin-right:8px}
+.msg-row{display:flex;flex-direction:column}
+.avatar{width:36px;height:36px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;margin-right:8px}
+.msg-with-avatar{display:flex;align-items:flex-start;gap:8px}
+.chat-controls{display:flex;gap:8px;margin-bottom:12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:#efefff;padding:8px 12px;border-radius:999px;cursor:pointer}
+.small-muted{font-size:12px;color:var(--muted)}
+.card{background:var(--panel);padding:12px;border-radius:10px}
 </style>
-'''
+"""
 
-st.markdown(CSS, unsafe_allow_html=True)
+DARK_CSS = """
+<style>
+:root{
+  --bg: #0b1020; --panel:#0f1724; --muted:#94a3b8; --accent:#7c3aed; --user:#08332f; --assistant:#0b1220;
+  color-scheme: dark;
+}
+body{background:var(--bg)!important;color:#e6eef8}
+.header{display:flex;align-items:center;gap:12px}
+.logo{font-size:28px}
+.tagline{color:var(--muted);font-size:14px}
+.chat-panel{display:flex;flex-direction:column;gap:8px;padding:12px}
+.bubble{padding:12px 14px;border-radius:14px;max-width:78%;line-height:1.45}
+.user{align-self:flex-end;background:linear-gradient(180deg, #054e45, #08332f);color:#dff6f0}
+.assistant{align-self:flex-start;background:linear-gradient(180deg,#0f1724,#0b1220);color:#e6eef8}
+.meta{font-size:12px;color:var(--muted);margin-bottom:6px}
+.role-badge{font-weight:600;margin-right:8px}
+.msg-row{display:flex;flex-direction:column}
+.avatar{width:36px;height:36px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;margin-right:8px}
+.msg-with-avatar{display:flex;align-items:flex-start;gap:8px}
+.chat-controls{display:flex;gap:8px;margin-bottom:12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:#15162a;padding:8px 12px;border-radius:999px;cursor:pointer}
+.small-muted{font-size:12px;color:var(--muted)}
+.card{background:var(--panel);padding:12px;border-radius:10px}
+</style>
+"""
+
+st.markdown(DARK_CSS if st.session_state.theme == "dark" else LIGHT_CSS, unsafe_allow_html=True)
 
 # -----------------------------
-# Sidebar controls
+# Sidebar (left) - controls and conversation list
 # -----------------------------
 with st.sidebar:
-    st.title("Verona AI")
+    st.markdown("<div class='header'><div class='logo'>🤖 Verona AI</div></div>", unsafe_allow_html=True)
+    st.write("A compact, polished assistant UI. Use the controls below to manage the model and conversation.")
+
+    st.markdown("---")
     HF_TOKEN = os.getenv("HF_TOKEN")
     if not HF_TOKEN:
         st.error("HF_TOKEN not set. Add it to Streamlit Cloud secrets or env vars.")
 
-    st.markdown("---")
-    st.subheader("Model & settings")
+    st.subheader("Model")
     MODEL_ID = st.text_input("Model ID (router)", value="HuggingFaceTB/SmolLM3-3B:hf-inference")
     temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
-    max_tokens = st.slider("Max tokens", 64, 4096, 512, 64)
+    max_tokens = st.slider("Max tokens", 64, 2048, 512, 64)
 
     st.markdown("---")
     st.subheader("Conversation")
     if st.button("Clear conversation"):
-        st.session_state.messages = []
+        st.session_state.messages = [{"role": "system", "content": st.session_state.messages[0]["content"], "ts": now_ts()}]
         st.success("Conversation cleared")
 
-    if st.session_state.messages:
-        if st.button("Download conversation (.json)"):
-            conv_json = json.dumps(st.session_state.messages, indent=2)
-            st.download_button("Download JSON", conv_json, file_name="verona_conversation.json")
+    if st.session_state.messages and st.download_button("Download .json", json.dumps(st.session_state.messages, indent=2)):
+        pass
+
+    uploaded_conv = st.file_uploader("Import conversation (.json)", type=["json"])
+    if uploaded_conv:
+        try:
+            parsed = json.load(uploaded_conv)
+            st.session_state.messages = parsed
+            st.success("Conversation imported")
+        except Exception as e:
+            st.error("Invalid conversation file")
 
     st.markdown("---")
     st.subheader("Quick prompts")
-    examples = [
-        "Summarize this repo in two sentences.",
-        "Generate 5 subject lines for an email about product launch.",
-        "Explain the difference between TCP and UDP for a beginner.",
-    ]
-    for ex in examples:
-        if st.button(ex):
-            st.session_state.messages.append({"role": "user", "content": ex})
+    example_row = st.container()
+    ex1, ex2, ex3 = example_row.columns(3)
+    if ex1.button("Summarize repo"):
+        st.session_state.messages.append({"role": "user", "content": "Summarize this repo in two sentences.", "ts": now_ts()})
+    if ex2.button("Email subject ideas"):
+        st.session_state.messages.append({"role": "user", "content": "Generate 5 subject lines for an email about product launch.", "ts": now_ts()})
+    if ex3.button("Explain TCP vs UDP"):
+        st.session_state.messages.append({"role": "user", "content": "Explain the difference between TCP and UDP for a beginner.", "ts": now_ts()})
 
     st.markdown("---")
     st.subheader("System prompt")
-    st.session_state.system_prompt = st.text_area("System prompt (sent once at start)", value=st.session_state.system_prompt, height=120)
+    st.session_state.messages[0]["content"] = st.text_area("System instruction (first message)", value=st.session_state.messages[0]["content"], height=120)
 
     st.markdown("---")
-    st.caption("Verona AI — improved UI. Powered by HuggingFace router + OpenAI wrapper")
+    st.write("Theme")
+    if st.button("Toggle dark/light"):
+        st.session_state.theme = "dark" if st.session_state.theme == "light" else "light"
+        st.experimental_rerun()
+
+    st.markdown("---")
+    st.caption("Verona AI — Polished UI. Built for clarity and speed.")
 
 # -----------------------------
-# Main: Chat area
+# Main layout: chat center + right panel for context
 # -----------------------------
+col_main, col_right = st.columns([3, 1])
 
-col1, col2 = st.columns([3, 1])
+with col_main:
+    # Header
+    st.markdown("<div style='display:flex;align-items:center;justify-content:space-between'><div><h2>Verona</h2><div class='tagline'>Smart, concise answers — now prettier.</div></div></div>", unsafe_allow_html=True)
 
-with col1:
-    st.header("Chat")
+    # Chat controls (chips)
+    st.markdown("<div class='chat-controls'><div class='chips'></div></div>", unsafe_allow_html=True)
 
-    # Render messages
-    if not st.session_state.messages:
-        st.info("Start by typing a message in the box below or use an example from the sidebar.")
+    # Chat panel
+    chat_box = st.container()
+    with chat_box:
+        # render messages
+        for idx, msg in enumerate(st.session_state.messages):
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            ts = msg.get("ts", "")
 
-    for msg in st.session_state.messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        timestamp = msg.get("ts", "")
-        # Chat bubble layout
-        role_class = "user-bubble" if role == "user" else "assistant-bubble"
-        role_label = "You" if role == "user" else ("System" if role == "system" else "Verona")
-        st.markdown(f"<div class='chat-row'><div class='role-badge'>{role_label} <span class='timestamp'>{timestamp}</span></div><div class='chat-bubble {role_class}'>{content}</div></div>", unsafe_allow_html=True)
+            # skip rendering empty
+            if not content:
+                continue
+
+            # layout with avatar for assistant and user
+            if role == "assistant":
+                avatar = "🟣"
+                role_label = "Verona"
+                bubble_class = "assistant"
+            elif role == "system":
+                avatar = "⚙️"
+                role_label = "System"
+                bubble_class = "assistant"
+            else:
+                avatar = "🙂"
+                role_label = "You"
+                bubble_class = "user"
+
+            # show row
+            st.markdown(f"<div class='msg-row'><div class='meta'><span class='role-badge'>{role_label}</span><span class='small-muted'>{ts}</span></div><div class='msg-with-avatar'><div class='avatar'>{avatar}</div><div class='bubble {bubble_class}'>{content}</div></div></div>", unsafe_allow_html=True)
 
     # Input area
-    prompt = st.chat_input("Ask Verona anything...")
+    prompt = st.text_area("Ask Verona anything...", height=120, key="prompt_input")
 
-    if prompt:
-        # add user message
-        user_msg = {"role": "user", "content": prompt, "ts": now_ts()}
-        st.session_state.messages.append(user_msg)
+    col_send, col_clear = st.columns([1, 1])
+    with col_send:
+        if st.button("Send"):
+            if prompt.strip():
+                st.session_state.messages.append({"role": "user", "content": prompt.strip(), "ts": now_ts()})
+                st.session_state.prompt_input = ""
 
-        # Build messages for API
-        api_messages = []
-        if st.session_state.system_prompt:
-            api_messages.append({"role": "system", "content": st.session_state.system_prompt})
-        # append conversation
-        for m in st.session_state.messages:
-            api_messages.append({"role": m["role"], "content": m["content"]})
+                # Prepare API messages
+                api_messages = []
+                for m in st.session_state.messages:
+                    # openai router expects roles 'system'|'user'|'assistant'
+                    api_messages.append({"role": m["role"], "content": m["content"]})
 
-        # call API
-        with st.chat_message("assistant"):
-            with st.spinner("Verona is composing..."):
-                try:
-                    if not HF_TOKEN:
-                        raise ValueError("HF_TOKEN not configured in environment.")
+                # Call model
+                with st.spinner("Verona is thinking..."):
+                    try:
+                        if not HF_TOKEN:
+                            raise ValueError("HF_TOKEN not configured in environment.")
 
-                    client = OpenAI(base_url="https://router.huggingface.co/v1", api_key=HF_TOKEN)
-                    response = client.chat.completions.create(
-                        model=MODEL_ID,
-                        messages=api_messages,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                    )
-                    reply = response.choices[0].message.content
-                    # strip optional special markers
-                    if "</think>" in reply:
-                        reply = reply.split("</think>")[-1].strip()
+                        client = OpenAI(base_url="https://router.huggingface.co/v1", api_key=HF_TOKEN)
+                        response = client.chat.completions.create(
+                            model=MODEL_ID,
+                            messages=api_messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                        )
+                        reply = response.choices[0].message.content
+                        if "</think>" in reply:
+                            reply = reply.split("</think>")[-1].strip()
 
-                    assistant_msg = {"role": "assistant", "content": reply, "ts": now_ts()}
-                    st.session_state.messages.append(assistant_msg)
+                        st.session_state.messages.append({"role": "assistant", "content": reply, "ts": now_ts()})
+                        st.experimental_rerun()
 
-                    st.markdown(reply)
+                    except Exception as e:
+                        st.error(f"Error calling model: {e}")
+            else:
+                st.warning("Please type a message before sending.")
 
-                except Exception as e:
-                    err = str(e)
-                    st.error(f"Error calling model: {err}")
+    with col_clear:
+        if st.button("Reset input"):
+            st.session_state.prompt_input = ""
 
-with col2:
-    st.subheader("Context / Tools")
-    st.write("Upload files that Verona should consider (optional). They are not sent to the API directly — this demo reads them and includes a short summary in the prompt.")
-
-    uploaded = st.file_uploader("Upload text / markdown / small files", accept_multiple_files=True)
+with col_right:
+    st.subheader("Context & Files")
+    st.write("Upload small files (txt, md). Verona can use them as context.")
+    uploaded = st.file_uploader("Upload files", accept_multiple_files=True, type=["txt", "md", "json"])
     if uploaded:
-        summaries = []
         for up in uploaded:
-            text = up.read().decode("utf-8")[:20_000]
-            summary = text[:1000]
-            summaries.append({"name": up.name, "summary": summary})
-        # show summaries
-        for s in summaries:
-            st.markdown(f"**{s['name']}** — {s['summary'][:300]}...")
-        # attach to session state for later
-        st.session_state.uploaded_files = summaries
+            try:
+                raw = up.read()
+                # try decode safely
+                try:
+                    text = raw.decode("utf-8")
+                except Exception:
+                    text = str(raw)[:300]
+                summary = text[:1000]
+                item = {"name": up.name, "summary": summary, "full": text}
+                # add if new
+                if not any(f["name"] == up.name for f in st.session_state.uploaded_files):
+                    st.session_state.uploaded_files.append(item)
+            except Exception:
+                st.warning(f"Couldn't read {up.name}")
+
+    if st.session_state.uploaded_files:
+        for f in st.session_state.uploaded_files:
+            with st.expander(f['name']):
+                st.code(f['summary'][:400] + ("..." if len(f['summary'])>400 else ""))
+                if st.button(f"Include {f['name']} in next prompt", key=f"include_{f['name']}"):
+                    # tack file summary onto system message for next call
+                    st.session_state.messages[0]["content"] += f"\n\nContext file ({f['name']}):\n{f['summary']}"
+                    st.success(f"Included {f['name']} as system context")
 
     st.markdown("---")
-    st.subheader("Conversation settings")
-    st.write("Messages in the conversation are stored in `st.session_state.messages`. Use the sidebar to clear or download.")
+    st.subheader("Conversation tools")
+    if st.button("Export conversation (.json)"):
+        st.download_button("Download JSON", json.dumps(st.session_state.messages, indent=2), file_name="verona_convo.json")
+
+    if st.button("Copy system prompt to clipboard"):
+        st.write(st.session_state.messages[0]["content"])
 
 # -----------------------------
-# Footer / small README
+# Footer: tips
 # -----------------------------
-
 st.markdown("---")
-st.markdown("**Tips**: use the System prompt to configure Verona's persona; change temperature for creativity; use max tokens to limit response length.")
+st.markdown("**Tips**: Keep system prompts short. Use temperature for creativity. Use the file uploader to provide reference docs.")
 
-# This file is intended to be dropped into Streamlit Cloud and run as `streamlit run app.py`.
-# End of file
+# EOF
