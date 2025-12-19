@@ -6,8 +6,8 @@ import time
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
-LOGO_PATH = "assets/logo.png"   # <-- your logo here
-FAVICON_PATH = "assets/logo.png"
+LOGO_PATH = "assets/Verona AI Logo.png" 
+FAVICON_PATH = "assets/Verona AI Logo.png"
 
 st.set_page_config(
     page_title="Verona AI",
