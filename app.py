@@ -4,59 +4,67 @@ from openai import OpenAI
 import time
 
 # -----------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION & STYLING
+# 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
+LOGO_PATH = "assets/logo.png"   # <-- your logo here
+FAVICON_PATH = "assets/logo.png"
+
 st.set_page_config(
     page_title="Verona AI",
-    page_icon="✨",
-    layout="centered"
+    page_icon=FAVICON_PATH,
+    layout="centered",
 )
 
-# Custom CSS for a minimalistic, "Gemini-like" UI
+# -----------------------------------------------------------------------------
+# 2. GLOBAL STYLING (Premium Minimal UI)
+# -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-    /* Hide the Streamlit main menu, footer, and header */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    #MainMenu, footer, header {visibility: hidden;}
 
-    /* Adjust padding to center content nicely */
     .block-container {
-        padding-top: 3rem;
-        padding-bottom: 5rem;
+        padding-top: 2.5rem;
+        padding-bottom: 6rem;
+        max-width: 720px;
     }
 
-    /* Gradient Title */
+    /* Title */
     .title-text {
         font-family: 'Inter', sans-serif;
-        background: -webkit-linear-gradient(45deg, #4A90E2, #9013FE);
+        background: linear-gradient(90deg, #5B8CFF, #9B5CFF);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-weight: 700;
+        font-weight: 800;
         font-size: 3rem;
         text-align: center;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.3rem;
     }
-    
+
     .subtitle-text {
         text-align: center;
-        color: #666;
-        font-size: 1.1rem;
-        margin-bottom: 3rem;
+        color: #777;
+        font-size: 1.05rem;
+        margin-bottom: 2.5rem;
     }
-    
-    /* Input field styling adjustments (Streamlit default is okay, but we clean around it) */
+
+    /* Chat input */
     .stChatInput {
-        padding-bottom: 1rem;
+        position: sticky;
+        bottom: 1rem;
+        background: transparent;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #fafafa;
+        border-right: 1px solid #eee;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. SETUP CLIENT
+# 3. CLIENT SETUP
 # -----------------------------------------------------------------------------
-
-# Internal Settings (Hidden from user)
 TEMPERATURE = 0.7
 MAX_TOKENS = 2048
 MODEL_ID = "HuggingFaceTB/SmolLM3-3B:hf-inference"
@@ -64,7 +72,7 @@ MODEL_ID = "HuggingFaceTB/SmolLM3-3B:hf-inference"
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 if not HF_TOKEN:
-    st.error("⚠️ **HF_TOKEN** is missing! Please check your `.env` or Streamlit secrets.")
+    st.error("⚠️ HF_TOKEN is missing.")
     st.stop()
 
 client = OpenAI(
@@ -73,51 +81,79 @@ client = OpenAI(
 )
 
 # -----------------------------------------------------------------------------
-# 3. SESSION STATE & CHAT HISTORY
+# 4. SESSION STATE
 # -----------------------------------------------------------------------------
-
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Title Area
+# -----------------------------------------------------------------------------
+# 5. SIDEBAR (CHAT HISTORY + BRANDING)
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.image(LOGO_PATH, width=80)
+    st.markdown("### **Verona AI**")
+    st.caption("Your intelligent assistant")
+
+    st.divider()
+
+    st.markdown(f"💬 **Messages:** {len(st.session_state.messages)}")
+
+    if st.button("🆕 New Chat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+
+    st.divider()
+    st.caption("Powered by Hugging Face Inference")
+
+# -----------------------------------------------------------------------------
+# 6. MAIN HEADER
+# -----------------------------------------------------------------------------
 st.markdown('<div class="title-text">Verona AI</div>', unsafe_allow_html=True)
 
-# Hero Section: Only shows when chat is empty
 if not st.session_state.messages:
-    st.markdown('<div class="subtitle-text">Hello. How can I help you today?</div>', unsafe_allow_html=True)
-    
-    # Simple starter suggestions
+    st.markdown(
+        '<div class="subtitle-text">Hello. How can I help you today?</div>',
+        unsafe_allow_html=True
+    )
+
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📝 Draft an email", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": "Draft a professional email to a client about a project update."})
-            st.rerun()
-    with col2:
-        if st.button("🧠 Brainstorm ideas", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": "Brainstorm 5 creative names for a new coffee shop."})
+            st.session_state.messages.append({
+                "role": "user",
+                "content": "Draft a professional email to a client about a project update."
+            })
             st.rerun()
 
-# Display Chat History
+    with col2:
+        if st.button("🧠 Brainstorm ideas", use_container_width=True):
+            st.session_state.messages.append({
+                "role": "user",
+                "content": "Brainstorm 5 creative names for a new coffee shop."
+            })
+            st.rerun()
+
+# -----------------------------------------------------------------------------
+# 7. DISPLAY CHAT HISTORY
+# -----------------------------------------------------------------------------
 for msg in st.session_state.messages:
-    avatar = "👤" if msg["role"] == "user" else "✨"
+    avatar = "👤" if msg["role"] == "user" else LOGO_PATH
     with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
 
 # -----------------------------------------------------------------------------
-# 4. CHAT LOGIC WITH STREAMING
+# 8. CHAT INPUT & STREAMING RESPONSE
 # -----------------------------------------------------------------------------
-
 if prompt := st.chat_input("Message Verona..."):
-    # 1. Add User Message
     st.session_state.messages.append({"role": "user", "content": prompt})
+
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # 2. Generate Assistant Response
-    with st.chat_message("assistant", avatar="✨"):
-        message_placeholder = st.empty()
+    with st.chat_message("assistant", avatar=LOGO_PATH):
+        placeholder = st.empty()
         full_response = ""
-        
+
         try:
             stream = client.chat.completions.create(
                 model=MODEL_ID,
@@ -126,34 +162,28 @@ if prompt := st.chat_input("Message Verona..."):
                 max_tokens=MAX_TOKENS,
                 stream=True,
             )
-            
-            # Process the stream
-            for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content
-                    full_response += content
-                    
-                    # Logic to hide <think> blocks while streaming
-                    display_text = full_response
-                    if "</think>" in display_text:
-                        # Only show what comes AFTER the thinking block
-                        display_text = display_text.split("</think>")[-1].strip()
-                    elif "<think>" in display_text:
-                        # While thinking, show a subtle loading state
-                        display_text = "Thinking..."
-                        
-                    message_placeholder.markdown(display_text + "▌")
-            
-            # Final cleanup
-            if "<think>" in full_response:
-                final_clean_reply = full_response.split("</think>")[-1].strip()
-            else:
-                final_clean_reply = full_response
 
-            message_placeholder.markdown(final_clean_reply)
-            
-            # 3. Save to History
-            st.session_state.messages.append({"role": "assistant", "content": final_clean_reply})
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if not delta:
+                    continue
+
+                full_response += delta
+
+                # Hide thinking blocks
+                if "<think>" in full_response and "</think>" not in full_response:
+                    placeholder.markdown("💭 *Verona is thinking…*")
+                else:
+                    clean = full_response.split("</think>")[-1]
+                    placeholder.markdown(clean + "▌")
+
+            final = full_response.split("</think>")[-1].strip()
+            placeholder.markdown(final)
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": final
+            })
 
         except Exception as e:
-            st.error(f"An error occurred: {e}")
+            st.error(f"Error: {e}")
