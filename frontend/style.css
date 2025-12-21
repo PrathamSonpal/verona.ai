@@ -1,0 +1,28 @@
+body {
+  background: #0b0c10;
+  font-family: Inter, system-ui;
+  color: white;
+}
+
+.app {
+  max-width: 900px;
+  margin: auto;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg,#6366f1,#a855f7);
+}
+
+.message.assistant {
+  background: rgba(255,255,255,0.08);
+}
