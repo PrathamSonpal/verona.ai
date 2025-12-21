@@ -3,128 +3,138 @@ import base64
 import streamlit as st
 from openai import OpenAI
 
-# -----------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION
-# -----------------------------------------------------------------------------
-LOGO_PATH = "assets/Verona AI Logo.png"   # use HIGH-RES (512x512+)
-FAVICON_PATH = LOGO_PATH
+# =============================================================================
+# CONFIG
+# =============================================================================
+LOGO_PATH = "assets/Verona AI Logo.png"   # 1024x1024 recommended
+MODEL_ID = "HuggingFaceTB/SmolLM3-3B:hf-inference"
+TEMPERATURE = 0.7
+MAX_TOKENS = 2048
 
 st.set_page_config(
     page_title="Verona AI",
-    page_icon=FAVICON_PATH,
+    page_icon=LOGO_PATH,
     layout="centered",
 )
 
-# -----------------------------------------------------------------------------
-# 2. UTILS
-# -----------------------------------------------------------------------------
-def load_logo_base64(path: str) -> str:
+# =============================================================================
+# UTILS
+# =============================================================================
+def b64_image(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
-LOGO_BASE64 = load_logo_base64(LOGO_PATH)
+LOGO_B64 = b64_image(LOGO_PATH)
 
-# -----------------------------------------------------------------------------
-# 3. PREMIUM GLOBAL STYLING
-# -----------------------------------------------------------------------------
+# =============================================================================
+# GLOBAL CSS — REAL PRODUCT UI
+# =============================================================================
 st.markdown("""
 <style>
-    :root {
-        --bg: #ffffff;
-        --surface: #f9fafb;
-        --assistant: #f3f4f6;
-        --text: #111827;
-        --muted: #6b7280;
-        --radius: 18px;
-        --shadow: 0 12px 32px rgba(0,0,0,0.06);
-        --gradient: linear-gradient(135deg, #4F46E5, #9333EA);
-    }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-    #MainMenu, footer, header { visibility: hidden; }
+:root {
+  --bg: #0b0c10;
+  --surface: #111318;
+  --card: rgba(255,255,255,0.06);
+  --border: rgba(255,255,255,0.08);
+  --text: #f9fafb;
+  --muted: #9ca3af;
+  --accent: linear-gradient(135deg, #6366f1, #a855f7);
+  --radius: 18px;
+}
 
-    body {
-        background-color: var(--bg);
-        color: var(--text);
-        font-family: Inter, system-ui, sans-serif;
-    }
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+}
 
-    .block-container {
-        max-width: 760px;
-        padding-top: 2.8rem;
-        padding-bottom: 7rem;
-    }
+#MainMenu, footer, header { display: none; }
 
-    /* Title */
-    .title-text {
-        font-size: 3.2rem;
-        font-weight: 800;
-        text-align: center;
-        background: var(--gradient);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.4rem;
-    }
+.block-container {
+  max-width: 820px;
+  padding-top: 2.2rem;
+  padding-bottom: 6.5rem;
+}
 
-    .subtitle-text {
-        text-align: center;
-        color: var(--muted);
-        font-size: 1.05rem;
-        margin-bottom: 3rem;
-    }
+/* SIDEBAR */
+section[data-testid="stSidebar"] {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
 
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background: var(--surface);
-        border-right: 1px solid #e5e7eb;
-        padding-top: 1.8rem;
-    }
+/* HEADER */
+.app-title {
+  font-size: 3rem;
+  font-weight: 800;
+  background: var(--accent);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-align: center;
+}
 
-    /* Chat message containers */
-    .stChatMessage {
-        border-radius: var(--radius);
-        padding: 0.2rem;
-        margin-bottom: 1rem;
-    }
+.app-subtitle {
+  text-align: center;
+  color: var(--muted);
+  margin-top: 0.3rem;
+  margin-bottom: 2.8rem;
+}
 
-    /* User message */
-    .stChatMessage[data-testid="chat-message-user"] {
-        background: var(--gradient);
-        color: white;
-        box-shadow: var(--shadow);
-    }
+/* CHAT WRAPPER */
+.chat-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
 
-    /* Assistant message */
-    .stChatMessage[data-testid="chat-message-assistant"] {
-        background: var(--assistant);
-        color: var(--text);
-        box-shadow: var(--shadow);
-    }
+/* MESSAGE BUBBLES */
+.msg {
+  max-width: 78%;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  line-height: 1.55;
+  font-size: 0.96rem;
+}
 
-    /* Chat input */
-    .stChatInput {
-        position: sticky;
-        bottom: 1.5rem;
-        background: transparent;
-    }
+.msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: white;
+}
 
-    textarea {
-        border-radius: 16px !important;
-        padding: 14px !important;
-        border: 1px solid #e5e7eb !important;
-    }
+.msg.assistant {
+  align-self: flex-start;
+  background: var(--card);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+}
+
+/* INPUT */
+.stChatInput {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(820px, 95%);
+}
+
+textarea {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-radius: 16px !important;
+  border: 1px solid var(--border) !important;
+  padding: 14px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# 4. CLIENT SETUP
-# -----------------------------------------------------------------------------
-TEMPERATURE = 0.7
-MAX_TOKENS = 2048
-MODEL_ID = "HuggingFaceTB/SmolLM3-3B:hf-inference"
-
+# =============================================================================
+# CLIENT
+# =============================================================================
 HF_TOKEN = os.getenv("HF_TOKEN")
 if not HF_TOKEN:
-    st.error("⚠️ HF_TOKEN is missing.")
+    st.error("HF_TOKEN missing")
     st.stop()
 
 client = OpenAI(
@@ -132,121 +142,101 @@ client = OpenAI(
     api_key=HF_TOKEN,
 )
 
-# -----------------------------------------------------------------------------
-# 5. SESSION STATE
-# -----------------------------------------------------------------------------
+# =============================================================================
+# STATE
+# =============================================================================
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# -----------------------------------------------------------------------------
-# 6. SIDEBAR
-# -----------------------------------------------------------------------------
+# =============================================================================
+# SIDEBAR
+# =============================================================================
 with st.sidebar:
     st.markdown(
         f"""
-        <div style="display:flex; justify-content:center; margin-bottom:12px;">
-            <img src="data:image/png;base64,{LOGO_BASE64}"
-                 style="width:72px; height:72px; image-rendering: crisp-edges;" />
+        <div style="display:flex;justify-content:center;margin-top:10px;">
+          <img src="data:image/png;base64,{LOGO_B64}" width="64"/>
         </div>
         """,
         unsafe_allow_html=True
     )
-
-    st.markdown("### **Verona AI**")
-    st.caption("Your intelligent assistant")
+    st.markdown("### Verona AI")
+    st.caption("Private • Intelligent • Fast")
 
     st.divider()
 
-    st.markdown(f"💬 **Messages:** {len(st.session_state.messages)}")
-
-    if st.button("🆕 New Chat", use_container_width=True):
+    if st.button("➕ New chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
     st.divider()
     st.caption("Powered by Hugging Face")
 
-# -----------------------------------------------------------------------------
-# 7. MAIN HEADER
-# -----------------------------------------------------------------------------
-st.markdown('<div class="title-text">Verona AI</div>', unsafe_allow_html=True)
+# =============================================================================
+# HEADER
+# =============================================================================
+st.markdown('<div class="app-title">Verona AI</div>', unsafe_allow_html=True)
 
 if not st.session_state.messages:
     st.markdown(
-        '<div class="subtitle-text">Hello. How can I help you today?</div>',
+        '<div class="app-subtitle">What would you like to work on?</div>',
         unsafe_allow_html=True
     )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("📝 Draft an email", use_container_width=True):
-            st.session_state.messages.append({
-                "role": "user",
-                "content": "Draft a professional email to a client about a project update."
-            })
-            st.rerun()
+# =============================================================================
+# CHAT HISTORY (CUSTOM, NOT STREAMLIT)
+# =============================================================================
+st.markdown('<div class="chat-wrapper">', unsafe_allow_html=True)
 
-    with col2:
-        if st.button("🧠 Brainstorm ideas", use_container_width=True):
-            st.session_state.messages.append({
-                "role": "user",
-                "content": "Brainstorm 5 creative names for a new coffee shop."
-            })
-            st.rerun()
-
-# -----------------------------------------------------------------------------
-# 8. DISPLAY CHAT HISTORY
-# -----------------------------------------------------------------------------
 for msg in st.session_state.messages:
-    avatar = "👤" if msg["role"] == "user" else LOGO_PATH
-    with st.chat_message(msg["role"], avatar=avatar):
-        st.markdown(msg["content"])
+    role = msg["role"]
+    cls = "user" if role == "user" else "assistant"
+    st.markdown(
+        f'<div class="msg {cls}">{msg["content"]}</div>',
+        unsafe_allow_html=True
+    )
 
-# -----------------------------------------------------------------------------
-# 9. CHAT INPUT & STREAMING
-# -----------------------------------------------------------------------------
+st.markdown('</div>', unsafe_allow_html=True)
+
+# =============================================================================
+# INPUT + STREAMING
+# =============================================================================
 if prompt := st.chat_input("Message Verona…"):
     st.session_state.messages.append({"role": "user", "content": prompt})
+    st.rerun()
 
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(prompt)
+# Stream last assistant reply
+if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+    placeholder = st.empty()
+    full = ""
 
-    with st.chat_message("assistant", avatar=LOGO_PATH):
-        placeholder = st.empty()
-        full_response = ""
+    stream = client.chat.completions.create(
+        model=MODEL_ID,
+        messages=st.session_state.messages,
+        temperature=TEMPERATURE,
+        max_tokens=MAX_TOKENS,
+        stream=True,
+    )
 
-        try:
-            stream = client.chat.completions.create(
-                model=MODEL_ID,
-                messages=st.session_state.messages,
-                temperature=TEMPERATURE,
-                max_tokens=MAX_TOKENS,
-                stream=True,
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if not delta:
+            continue
+
+        full += delta
+
+        if "<think>" in full and "</think>" not in full:
+            placeholder.markdown(
+                '<div class="msg assistant">Thinking…</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            clean = full.split("</think>")[-1]
+            placeholder.markdown(
+                f'<div class="msg assistant">{clean}</div>',
+                unsafe_allow_html=True
             )
 
-            for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if not delta:
-                    continue
-
-                full_response += delta
-
-                if "<think>" in full_response and "</think>" not in full_response:
-                    placeholder.markdown(
-                        "<span style='color:#6b7280; font-style:italic;'>Verona is thinking…</span>",
-                        unsafe_allow_html=True
-                    )
-                else:
-                    clean = full_response.split("</think>")[-1]
-                    placeholder.markdown(clean + "▌")
-
-            final = full_response.split("</think>")[-1].strip()
-            placeholder.markdown(final)
-
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": final
-            })
-
-        except Exception as e:
-            st.error(f"Error: {e}")
+    final = full.split("</think>")[-1].strip()
+    st.session_state.messages.append({"role": "assistant", "content": final})
+    st.rerun()
