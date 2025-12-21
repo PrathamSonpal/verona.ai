@@ -1,24 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8" />
   <title>Verona AI</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<div class="app">
-  <header>
-    <img src="Verona AI Logo.png" />
-    <h1>Verona AI</h1>
-  </header>
+<div id="login">
+  <h2>Verona AI</h2>
+  <input id="email" placeholder="Email" />
+  <input id="password" type="password" placeholder="Password" />
+  <button onclick="login()">Login</button>
+</div>
 
+<div id="app" hidden>
+  <header>Verona AI</header>
   <main id="chat"></main>
-
   <footer>
     <input id="input" placeholder="Message Verona…" />
   </footer>
 </div>
 
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
