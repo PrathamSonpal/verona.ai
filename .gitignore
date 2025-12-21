@@ -1,0 +1,10 @@
+# Secrets
+firebase-service.json
+.env
+
+# Python
+__pycache__/
+venv/
+
+# Node
+node_modules/
