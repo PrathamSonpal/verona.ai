@@ -18,14 +18,24 @@ let token = null;
 let messages = [];
 
 window.login = async () => {
-  const email = emailInput.value;
-  const password = passwordInput.value;
+  try {
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
 
-  const userCred = await signInWithEmailAndPassword(auth, email, password);
-  token = await userCred.user.getIdToken();
+    if (!email || !password) {
+      alert("Please enter email and password");
+      return;
+    }
 
-  document.getElementById("login").hidden = true;
-  document.getElementById("app").hidden = false;
+    const userCred = await signInWithEmailAndPassword(auth, email, password);
+    token = await userCred.user.getIdToken();
+
+    document.getElementById("login").hidden = true;
+    document.getElementById("app").hidden = false;
+  } catch (err) {
+    console.error(err);
+    alert(err.message);
+  }
 };
 
 const input = document.getElementById("input");
